@@ -60,7 +60,24 @@ li input[type=checkbox]{width:20px;height:20px;accent-color:var(--ok);margin-top
 h2{font-size:15px;margin:22px 0 6px}
 .foot{display:flex;gap:6px;margin-top:22px;flex-wrap:wrap}
 .foot span{font-size:12px;color:var(--sub);align-self:center}
-</style></head><body><main>
+.ro #plan .card,.ro .x,.ro .foot{display:none}
+.ro li input,.ro #dmemo,.ro .t{pointer-events:none}
+.ur{padding:6px 0;border-top:1px solid var(--line)}.ur b{flex:1 1 90px}
+details summary{cursor:pointer;font-weight:600}
+</style></head><body><main id="auth" style="max-width:360px;padding-top:12vh">
+<h1 style="text-align:center">📅 하루 일정 관리</h1>
+<div class="card" style="margin-top:16px;display:grid;gap:8px">
+<input id="nm" placeholder="이름 (가입할 때만 입력)"><input id="em" type="email" placeholder="이메일" autocomplete="username">
+<input id="pw" type="password" placeholder="비밀번호 (6자 이상)" autocomplete="current-password">
+<button class="pri" id="login">로그인</button><button class="ghost" id="signup">가입하기</button>
+<div id="amsg" class="lb" style="color:var(--danger)"></div></div></main>
+<main id="app" style="display:none">
+<div class="f" style="justify-content:space-between;margin-bottom:10px"><span>👤 <b id="who"></b></span>
+<span id="viewing" style="font-weight:600"></span>
+<span><button class="ghost" id="back" style="display:none">내 일정으로</button> <button class="ghost" id="out">로그아웃</button></span></div>
+<details id="adm" class="card" style="display:none;margin-bottom:12px"><summary>👑 팀원 관리</summary><div id="ulist"></div></details>
+<div id="wait" class="card" style="display:none">⏳ 가입이 완료되었습니다. 관리자가 승인하면 사용할 수 있어요.</div>
+<div id="plan">
 <div class="top"><h1>📅 하루 일정 관리</h1>
 <div class="nav"><button id="prev">◀</button> <button id="today">오늘</button> <button id="next">▶</button></div></div>
 <div class="nav tg" style="margin:10px 0"><button id="vcal" class="on">📅 캘린더</button><button id="vday">📋 일간</button></div>
@@ -96,15 +113,70 @@ h2{font-size:15px;margin:22px 0 6px}
  <button class="ghost" id="exp">백업 저장</button>
  <button class="ghost" id="imp">백업 불러오기</button>
  <input type="file" id="file" accept=".json" style="display:none">
- <span>데이터는 이 브라우저에 저장됩니다.</span>
+ <span>데이터는 내 계정에 저장됩니다.</span>
 </div>
-</main>
-<script>
+</div></main>
+<script type="module">
+import {initializeApp} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import {getAuth,onAuthStateChanged,signInWithEmailAndPassword,createUserWithEmailAndPassword,signOut} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import {getFirestore,doc,getDoc,setDoc,getDocs,collection} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+// ▼▼ Firebase 콘솔에서 복사한 설정값으로 바꿔 주세요 ▼▼
+const firebaseConfig={apiKey:"AIzaSyDGGiRkTIPEhMqE62QcPpcZJUZG05VWM-s",authDomain:"calendar-c4c19.firebaseapp.com",projectId:"calendar-c4c19",appId:"1:766834548670:web:e151a9d0d78ee4e9f323ef"};
+// ▲▲▲▲▲
 const KEY="planner_v2",$=id=>document.getElementById(id),DN=["일","월","화","수","목","금","토"];
 let db={tasks:[],done:{},dmemo:{}},cur=new Date(),editId=null;
-try{const s=JSON.parse(localStorage.getItem(KEY)||"null");if(s)db=Object.assign(db,s)}catch(e){}
-try{const o=JSON.parse(localStorage.getItem("planner_v1")||"null");if(o&&!db.tasks.length&&!localStorage.getItem(KEY))for(const k in o)o[k].forEach(i=>{db.tasks.push({id:String(i.id),title:i.title,time:i.time,memo:"",rule:"none",days:[],start:k,skip:[]});if(i.done)db.done[String(i.id)+"|"+k]=1})}catch(e){}
-const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(db))}catch(e){}};
+const fb=initializeApp(firebaseConfig),au=getAuth(fb),fs=getFirestore(fb);
+let me=null,ro=false,viewUid=null,tmr,pend=null,signing=null;
+const save=()=>{if(ro||!viewUid)return;const u=viewUid,d=JSON.parse(JSON.stringify(db));clearTimeout(tmr);
+ pend=()=>{pend=null;setDoc(doc(fs,"plans",u),d).catch(e=>alert("저장 실패: "+e.code))};tmr=setTimeout(pend,500)};
+const flush=()=>{if(pend){clearTimeout(tmr);pend()}};
+addEventListener("pagehide",flush);
+const ERR={"auth/invalid-credential":"이메일 또는 비밀번호가 올바르지 않습니다.","auth/email-already-in-use":"이미 가입된 이메일입니다.","auth/weak-password":"비밀번호는 6자 이상이어야 합니다.","auth/invalid-email":"이메일 형식이 올바르지 않습니다.","auth/too-many-requests":"시도가 너무 많습니다. 잠시 후 다시 해 주세요."};
+async function doAuth(isNew){
+ const e=$("em").value.trim(),p=$("pw").value,n=$("nm").value.trim();$("amsg").textContent="";
+ if(isNew&&!n){$("amsg").textContent="이름을 입력해 주세요.";return}
+ try{
+  if(isNew){signing=(async()=>{const c=await createUserWithEmailAndPassword(au,e,p);
+   await setDoc(doc(fs,"users",c.user.uid),{name:n,email:e,role:"member",approved:false})})();await signing}
+  else await signInWithEmailAndPassword(au,e,p);
+ }catch(x){$("amsg").textContent=ERR[x.code]||x.code}}
+$("login").onclick=()=>doAuth(false);$("signup").onclick=()=>doAuth(true);
+$("pw").onkeydown=e=>{if(e.key==="Enter")doAuth(false)};
+$("out").onclick=()=>{flush();signOut(au)};
+$("back").onclick=()=>openPlan(me.uid,me.name);
+onAuthStateChanged(au,async u=>{
+ if(signing)await signing.catch(()=>{});
+ if(!u){me=null;$("app").style.display="none";$("auth").style.display="";return}
+ let p;try{p=await getDoc(doc(fs,"users",u.uid))}catch(e){}
+ if(!p||!p.exists()){alert("계정 정보를 불러오지 못했습니다.");signOut(au);return}
+ me={uid:u.uid,...p.data()};
+ $("auth").style.display="none";$("app").style.display="";
+ $("who").textContent=me.name+(me.role==="admin"?" (관리자)":"");
+ $("adm").style.display=me.role==="admin"?"":"none";
+ $("wait").style.display=me.approved?"none":"";$("plan").style.display=me.approved?"":"none";
+ if(me.role==="admin")loadUsers();
+ if(me.approved)openPlan(u.uid,me.name)});
+async function openPlan(uid,name){
+ flush();let ex;
+ try{const d=await getDoc(doc(fs,"plans",uid));ex=d.exists();
+  db=Object.assign({tasks:[],done:{},dmemo:{}},ex?d.data():{})}catch(e){alert("불러오기 실패: "+e.code);return}
+ viewUid=uid;ro=uid!==me.uid;
+ if(!ex&&!ro)try{const o=JSON.parse(localStorage.getItem(KEY)||"null");
+  if(o&&o.tasks&&o.tasks.length&&confirm("이 브라우저에 저장된 기존 일정을 내 계정으로 가져올까요?")){db=Object.assign(db,o);save()}}catch(e){}
+ document.body.classList.toggle("ro",ro);$("dmemo").readOnly=ro;
+ $("viewing").textContent=ro?"👀 "+name+"님의 일정 (읽기 전용)":"";$("back").style.display=ro?"":"none";
+ cur=new Date();resetForm();render()}
+const mkBtn=(t,f)=>{const b=document.createElement("button");b.className="ghost";b.textContent=t;b.onclick=f;return b};
+async function loadUsers(){
+ const q=await getDocs(collection(fs,"users")),L=[];q.forEach(d=>L.push({uid:d.id,...d.data()}));
+ L.sort((a,b)=>a.approved-b.approved||a.name.localeCompare(b.name));
+ const box=$("ulist");box.innerHTML="";
+ L.forEach(u=>{const r=document.createElement("div");r.className="f ur";
+  r.innerHTML=`<b>${esc(u.name)}${u.approved?"":" ⏳"}</b><span class="lb">${esc(u.email)}</span>`;
+  const v=mkBtn("보기",()=>openPlan(u.uid,u.name));v.disabled=!u.approved;r.append(v);
+  if(u.uid!==me.uid)r.append(mkBtn(u.approved?"승인 해제":"승인",async()=>{
+   await setDoc(doc(fs,"users",u.uid),{approved:!u.approved},{merge:true});loadUsers()}));
+  box.append(r)})}
 const dk=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
 const pd=s=>{const [y,m,d]=s.split("-").map(Number);return new Date(y,m-1,d)};
 const RL={none:"",daily:"매일",weekdays:"평일",weekly:"매주",monthly:"매월"};
