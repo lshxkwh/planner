@@ -151,9 +151,8 @@ li{border-radius:8px;border-left:3px solid var(--ac)}li.done{border-left-color:v
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import {getAuth,onAuthStateChanged,signInWithEmailAndPassword,createUserWithEmailAndPassword,signOut} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import {getFirestore,doc,getDoc,setDoc,getDocs,collection} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-// ▼▼ Firebase 콘솔에서 복사한 설정값으로 바꿔 주세요 ▼▼
-const firebaseConfig={apiKey:"YOUR_API_KEY",authDomain:"YOUR_PROJECT.firebaseapp.com",projectId:"YOUR_PROJECT",appId:"YOUR_APP_ID"};
-// ▲▲▲▲▲
+// Firebase 설정값
+const firebaseConfig={apiKey:"AIzaSyDGGiRkTIPEhMqE62QcPpcZJUZG05VWM-s",authDomain:"calendar-c4c19.firebaseapp.com",projectId:"calendar-c4c19",appId:"1:766834548670:web:e151a9d0d78ee4e9f323ef"};
 const KEY="planner_v2",$=id=>document.getElementById(id),DN=["일","월","화","수","목","금","토"];
 let db={tasks:[],done:{},dmemo:{}},cur=new Date(),editId=null;
 const fb=initializeApp(firebaseConfig),au=getAuth(fb),fs=getFirestore(fb);
